@@ -1,0 +1,412 @@
+---
+title: "EE PRA (ad hoc)"
+author: "Sanittawan Nikki Tan"
+date: "1/29/2021"
+output: html_document
+---
+
+## Setting up the workspace.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(officer)
+library(ggplot2)
+library(xlsx)
+```
+
+```{r}
+getwd()
+setwd("...") # set your own working directory
+getwd()
+```
+
+## Read, Standardize names, and Filter data
+
+The data used is `EE_WBG_0930.xlsx` from September 2020 portfolio.
+
+```{r read_data}
+ee_data <- read_excel("./EE_WBG_0930.xlsx")
+
+ee_data <- ee_data %>% 
+            filter(appfy >= 2011 & appfy <= 2020)
+
+# check unique IDs making sure no duplicates
+n_distinct(ee_data$pid) == dim(ee_data)[1]
+
+# must standardize country names here
+standardize_countries <- function(df) {
+    new_df <- df %>%
+        # trim whitespaces
+        mutate(new_ctr = trimws(ctr)) %>% 
+        select(- c(ctr)) %>% 
+        rename(ctr = new_ctr) %>%
+        mutate(ctr = case_when(
+            ctr == "Afghanistan" ~ "Afghanistan",
+            ctr == "Albania" ~ "Albania",
+            ctr == "Algeria" ~ "Algeria",
+            ctr == "American Samoa" ~ "American Samoa",
+            ctr == "Andorra" ~ "Andorra",
+            ctr == "Angola" ~ "Angola",
+            ctr == "Antigua and Barbuda" ~ "Antigua and Barbuda",
+            ctr == "Argentina" ~ "Argentina",
+            ctr == "Armenia" ~ "Armenia",
+            ctr == "Aruba" ~ "Aruba",
+            ctr == "Australia" ~ "Australia",
+            ctr == "Austria" ~ "Austria",
+            ctr == "Azerbaijan" ~ "Azerbaijan",
+            ctr == "Bahamas, The" ~ "Bahamas, The",
+            ctr == "Bahrain" ~ "Bahrain",
+            ctr == "Bangladesh" ~ "Bangladesh",
+            ctr == "Barbados" ~ "Barbados",
+            ctr == "Belarus" ~ "Belarus",
+            ctr == "Belgium" ~ "Belgium",
+            ctr == "Belize" ~ "Belize",
+            ctr == "Benin" ~ "Benin",
+            ctr == "Bermuda" ~ "Bermuda",
+            ctr == "Bhutan" ~ "Bhutan",
+            ctr == "Bolivia" ~ "Bolivia",
+            ctr == "Bosnia and Herzegovina" ~ "Bosnia and Herzegovina",
+            ctr == "Botswana" ~ "Botswana",
+            ctr == "Brazil" ~ "Brazil",
+            ctr == "British Virgin Islands" ~ "British Virgin Islands",
+            ctr == "Brunei Darussalam" ~ "Brunei Darussalam",
+            ctr == "Bulgaria" ~ "Bulgaria",
+            ctr == "Burkina Faso" ~ "Burkina Faso",
+            ctr == "Burundi" ~ "Burundi",
+            ctr == "Cabo Verde" ~ "Cabo Verde",
+            ctr == "Cape Verde" ~ "Cabo Verde",
+            ctr == "Cambodia" ~ "Cambodia",
+            ctr == "Cameroon" ~ "Cameroon",
+            ctr == "Canada" ~ "Canada",
+            ctr == "Cayman Islands" ~ "Cayman Islands",
+            ctr == "Central African Republic" ~ "Central African Republic",
+            ctr == "Chad" ~ "Chad",
+            ctr == "Channel Islands" ~ "Channel Islands",
+            ctr == "Chile" ~ "Chile",
+            ctr == "China" ~ "China",
+            ctr == "Colombia" ~ "Colombia",
+            ctr == "Comoros" ~ "Comoros",
+            ctr == "Congo, Dem. Rep." ~ "Congo, Dem. Rep.",
+            ctr == "Congo, Rep." ~ "Congo, Rep.",
+            ctr == "Costa Rica" ~ "Costa Rica",
+            ctr == "Côte d'Ivoire" ~ "Côte d'Ivoire",
+            ctr == "Cote D'Ivoire" ~ "Côte d'Ivoire",
+            ctr == "Croatia" ~ "Croatia",
+            ctr == "Cuba" ~ "Cuba",
+            ctr == "Curaçao" ~ "Curaçao",
+            ctr == "Cyprus" ~ "Cyprus",
+            ctr == "Czech Republic" ~ "Czech Republic",
+            ctr == "Denmark" ~ "Denmark",
+            ctr == "Djibouti" ~ "Djibouti",
+            ctr == "Dominica" ~ "Dominica",
+            ctr == "Dominican Republic" ~ "Dominican Republic",
+            ctr == "Ecuador" ~ "Ecuador",
+            ctr == "Egypt, Arab Rep." ~ "Egypt, Arab Rep.",
+            ctr == "Egypt, Arab Republic of"  ~ "Egypt, Arab Rep.",
+            ctr == "El Salvador" ~ "El Salvador",
+            ctr == "Equatorial Guinea" ~ "Equatorial Guinea",
+            ctr == "Eritrea" ~ "Eritrea",
+            ctr == "Estonia" ~ "Estonia",
+            ctr == "Eswatini" ~ "Eswatini",
+            ctr == "Ethiopia" ~ "Ethiopia",
+            ctr == "Faeroe Islands" ~ "Faeroe Islands",
+            ctr == "Fiji" ~ "Fiji",
+            ctr == "Finland" ~ "Finland",
+            ctr == "France" ~ "France",
+            ctr == "French Polynesia" ~ "French Polynesia",
+            ctr == "Gabon" ~ "Gabon",
+            ctr == "Gambia, The" ~ "Gambia, The",
+            ctr == "Georgia" ~ "Georgia",
+            ctr == "Germany" ~ "Germany",
+            ctr == "Ghana" ~ "Ghana",
+            ctr == "Gibraltar" ~ "Gibraltar",
+            ctr == "Greece" ~ "Greece",
+            ctr == "Greenland" ~ "Greenland",
+            ctr == "Grenada" ~ "Grenada",
+            ctr == "Guam" ~ "Guam",
+            ctr == "Guatemala" ~ "Guatemala",
+            ctr == "Guinea" ~ "Guinea",
+            ctr == "Guinea-Bissau" ~ "Guinea-Bissau",
+            ctr == "Guyana" ~ "Guyana",
+            ctr == "Haiti" ~ "Haiti",
+            ctr == "Honduras" ~ "Honduras",
+            ctr == "Hong Kong SAR, China" ~ "Hong Kong SAR, China",
+            ctr == "Hungary" ~ "Hungary",
+            ctr == "Iceland" ~ "Iceland",
+            ctr == "India" ~ "India",
+            ctr == "Indonesia" ~ "Indonesia",
+            ctr == "Iran, Islamic Rep." ~ "Iran, Islamic Rep.",
+            ctr == "Iraq" ~ "Iraq",
+            ctr == "Ireland" ~ "Ireland",
+            ctr == "Isle of Man" ~ "Isle of Man",
+            ctr == "Israel" ~ "Israel",
+            ctr == "Italy" ~ "Italy",
+            ctr == "Jamaica" ~ "Jamaica",
+            ctr == "Japan" ~ "Japan",
+            ctr == "Jordan" ~ "Jordan",
+            ctr == "Kazakhstan" ~ "Kazakhstan",
+            ctr == "Kenya" ~ "Kenya",
+            ctr == "Kiribati" ~ "Kiribati",
+            ctr == "Korea, Dem. Rep." ~ "Korea, Dem. Rep.",
+            ctr == "Korea, Rep." ~ "Korea, Rep.",
+            ctr == "Kosovo" ~ "Kosovo",
+            ctr == "Kuwait" ~ "Kuwait",
+            ctr == "Kyrgyz Republic" ~ "Kyrgyz Republic",
+            ctr == "Lao PDR" ~ "Lao PDR",
+            ctr == "Lao People's Democratic Republic" ~ "Lao PDR",
+            ctr == "Latvia" ~ "Latvia",
+            ctr == "Lebanon" ~ "Lebanon",
+            ctr == "Lesotho" ~ "Lesotho",
+            ctr == "Liberia" ~ "Liberia",
+            ctr == "Libya" ~ "Libya",
+            ctr == "Liechtenstein" ~ "Liechtenstein",
+            ctr == "Lithuania" ~ "Lithuania",
+            ctr == "Luxembourg" ~ "Luxembourg",
+            ctr == "Macao SAR, China" ~ "Macao SAR, China",
+            ctr == "Madagascar" ~ "Madagascar",
+            ctr == "Malawi" ~ "Malawi",
+            ctr == "Malaysia" ~ "Malaysia",
+            ctr == "Maldives" ~ "Maldives",
+            ctr == "Mali" ~ "Mali",
+            ctr == "Malta" ~ "Malta",
+            ctr == "Marshall Islands" ~ "Marshall Islands",
+            ctr == "Mauritania" ~ "Mauritania",
+            ctr == "Mauritius" ~ "Mauritius",
+            ctr == "Mexico" ~ "Mexico",
+            ctr == "Micronesia, Fed. Sts." ~ "Micronesia, Fed. Sts.",
+            ctr == "Moldova" ~ "Moldova",
+            ctr == "Monaco" ~ "Monaco",
+            ctr == "Mongolia" ~ "Mongolia",
+            ctr == "Montenegro" ~ "Montenegro",
+            ctr == "Morocco" ~ "Morocco",
+            ctr == "Mozambique" ~ "Mozambique",
+            ctr == "Myanmar" ~ "Myanmar",
+            ctr == "Namibia" ~ "Namibia",
+            ctr == "Nauru" ~ "Nauru",
+            ctr == "Nepal" ~ "Nepal",
+            ctr == "Netherlands" ~ "Netherlands",
+            ctr == "New Caledonia" ~ "New Caledonia",
+            ctr == "New Zealand" ~ "New Zealand",
+            ctr == "Nicaragua" ~ "Nicaragua",
+            ctr == "Niger" ~ "Niger",
+            ctr == "Nigeria" ~ "Nigeria",
+            ctr == "North Macedonia" ~ "North Macedonia",
+            ctr == "Northern Mariana Islands" ~ "Northern Mariana Islands",
+            ctr == "Norway" ~ "Norway",
+            ctr == "Oman" ~ "Oman",
+            ctr == "Pakistan" ~ "Pakistan",
+            ctr == "Palau" ~ "Palau",
+            ctr == "Panama" ~ "Panama",
+            ctr == "Papua New Guinea" ~ "Papua New Guinea",
+            ctr == "Paraguay" ~ "Paraguay",
+            ctr == "Peru" ~ "Peru",
+            ctr == "Philippines" ~ "Philippines",
+            ctr == "Poland" ~ "Poland",
+            ctr == "Portugal" ~ "Portugal",
+            ctr == "Puerto Rico" ~ "Puerto Rico",
+            ctr == "Qatar" ~ "Qatar",
+            ctr == "Romania" ~ "Romania",
+            ctr == "Russian Federation" ~ "Russian Federation",
+            ctr == "Rwanda" ~ "Rwanda",
+            ctr == "Samoa" ~ "Samoa",
+            ctr == "San Marino" ~ "San Marino",
+            ctr == "São Tomé and Principe" ~ "São Tomé and Principe",
+            ctr == "Saudi Arabia" ~ "Saudi Arabia",
+            ctr == "Senegal" ~ "Senegal",
+            ctr == "Serbia" ~ "Serbia",
+            ctr == "Seychelles" ~ "Seychelles",
+            ctr == "Sierra Leone" ~ "Sierra Leone",
+            ctr == "Singapore" ~ "Singapore",
+            ctr == "Sint Maarten (Dutch part)" ~ "Sint Maarten (Dutch part)",
+            ctr == "Slovak Republic" ~ "Slovak Republic",
+            ctr == "Slovenia" ~ "Slovenia",
+            ctr == "Solomon Islands" ~ "Solomon Islands",
+            ctr == "Somalia" ~ "Somalia",
+            ctr == "South Africa" ~ "South Africa",
+            ctr == "South Sudan" ~ "South Sudan",
+            ctr == "Spain" ~ "Spain",
+            ctr == "Sri Lanka" ~ "Sri Lanka",
+            ctr == "St. Kitts and Nevis" ~ "St. Kitts and Nevis",
+            ctr == "St. Lucia" ~ "St. Lucia",
+            ctr == "St. Martin (French part)" ~ "St. Martin (French part)",
+            ctr == "St. Vincent and the Grenadines" ~ "St. Vincent and the Grenadines",
+            ctr == "Sudan" ~ "Sudan",
+            ctr == "Suriname" ~ "Suriname",
+            ctr == "Sweden" ~ "Sweden",
+            ctr == "Switzerland" ~ "Switzerland",
+            ctr == "Syrian Arab Republic" ~ "Syrian Arab Republic",
+            ctr == "Taiwan, China" ~ "Taiwan, China",
+            ctr == "Tajikistan" ~ "Tajikistan",
+            ctr == "Tanzania" ~ "Tanzania",
+            ctr == "Thailand" ~ "Thailand",
+            ctr == "Timor-Leste" ~ "Timor-Leste",
+            ctr == "Togo" ~ "Togo",
+            ctr == "Tonga" ~ "Tonga",
+            ctr == "Trinidad and Tobago" ~ "Trinidad and Tobago",
+            ctr == "Tunisia" ~ "Tunisia",
+            ctr == "Turkey" ~ "Turkey",
+            ctr == "Turkmenistan" ~ "Turkmenistan",
+            ctr == "Turks and Caicos Islands" ~ "Turks and Caicos Islands",
+            ctr == "Tuvalu" ~ "Tuvalu",
+            ctr == "Uganda" ~ "Uganda",
+            ctr == "Ukraine" ~ "Ukraine",
+            ctr == "United Arab Emirates" ~ "United Arab Emirates",
+            ctr == "United Kingdom" ~ "United Kingdom",
+            ctr == "United States" ~ "United States",
+            ctr == "Uruguay" ~ "Uruguay",
+            ctr == "Uzbekistan" ~ "Uzbekistan",
+            ctr == "Vanuatu" ~ "Vanuatu",
+            ctr == "Venezuela, RB" ~ "Venezuela, RB",
+            ctr == "Venezuela, Republica Bolivariana de" ~ "Venezuela, RB",
+            ctr == "Vietnam" ~ "Vietnam",
+            ctr == "Virgin Islands (U.S.)" ~ "Virgin Islands (U.S.)",
+            ctr == "West Bank and Gaza" ~ "West Bank and Gaza",
+            ctr == "Yemen, Rep." ~ "Yemen, Rep.",
+            ctr == "Yemen, Republic of" ~ "Yemen, Rep.",
+            ctr == "Zambia" ~ "Zambia",
+            ctr == "Zimbabwe" ~ "Zimbabwe",
+            TRUE ~ as.character(ctr)
+        ))
+    return(new_df)
+}
+
+ee_data <- standardize_countries(ee_data)
+
+ifc_ee_data <- ee_data %>% 
+                    filter(inst == "IFC-IS" | inst == "IFC-AS")
+```
+
+## Labeling Demand-Supply Side
+
+It is noted that the IFC data do not contain projects that are both demand and supply. The categorization is based on the primary sector (`sector_1` column). Only electrical power and utilities are supply-side. Based on manual inspection, the secondary and tertiary sectors are only more detailed description of the primary sector.
+
+```{r label_data}
+side_labeling <- function(df) {
+    new_df <- df %>% 
+                mutate(side = case_when(
+                        sector_1 == "Finance & Insurance" ~ "demand",
+                        sector_1 == "Construction and Real Estate" ~ "demand",
+                        sector_1 == "Electric Power" ~ "supply",
+                        sector_1 == "Non-Investment" ~ "demand",
+                        sector_1 == "Nonmetallic Mineral Product Manufacturing" ~ "demand",
+                        sector_1 == "Public Administration" ~ "demand",
+                        sector_1 == "Industrial & Consumer Products" ~ "demand",
+                        sector_1 == "Utilities" ~ "supply",
+                        sector_1 == "Transportation and Warehousing" ~ "demand",
+                        sector_1 == "Textiles, Apparel & Leather" ~ "demand",
+                        sector_1 == "Agriculture and Forestry" ~ "demand",
+                        sector_1 == "Chemicals" ~ "demand",
+                        sector_1 == "Information" ~ "demand",
+                        sector_1 == "Primary Metals" ~ "demand",
+                        sector_1 == "Food & Beverages" ~ "demand",
+                        sector_1 == "Education Services" ~ "demand",
+                        sector_1 == "Professional, Scientific and Technical Services" ~ "demand",
+                        sector_1 == "Collective Investment Vehicles" ~ "demand",
+                        sector_1 == "Wholesale and Retail Trade" ~ "demand",
+                        sector_1 == "Pulp & Paper" ~ "demand",
+                        sector_1 == "Oil, Gas and Mining" ~ "demand",
+                        sector_1 == "Health Care" ~ "demand",
+                        sector_1 == "Other (For Non-Investment Projects)" ~ "demand",
+                        sector_1 == "Plastics & Rubber" ~ "demand",
+                        TRUE ~ as.character(ctr)
+                ))
+    return(new_df)
+}
+
+ifc_ee_data <- side_labeling(ifc_ee_data)
+```
+
+## Write to Excel file
+
+```{r write_to_file}
+write.xlsx(ifc_ee_data, file = "EE_IFC_0129.xlsx", sheetName = "Sheet1", 
+  col.names = TRUE, row.names = TRUE, append = FALSE)
+```
+
+## Visualize
+
+### Chart 1: Number of projects by year
+
+```{r breakdown_number}
+num_projs_by_year <- ifc_ee_data %>%
+                    group_by(appfy, side) %>% 
+                    summarize(count = n()) %>% 
+                    arrange(desc(count))
+num_projs_by_year %>% ggplot(aes(x = appfy, y = count)) +
+                        geom_col(aes(fill = side)) +
+                        geom_text(aes(label = count, y = count),
+                                    vjust = 1.4, size = 3, color = "white") +
+                        labs(x = "Year", y = "Number of Interventions", fill = "Side", 
+                                title = "IFC: Breakdown of Demand and Supply Side Interventions") +
+                        theme_minimal() +
+                        theme(legend.position = "bottom")
+ggsave("./viz/num_intv.png", width = 15, height = 10, units = "cm")
+```
+
+### Chart 2: Project amounts by year
+
+```{r breakdown_amount}
+amt_by_year <- ifc_ee_data %>%
+                    filter(!is.na(`amount(m)`)) %>% 
+                    group_by(appfy, side) %>% 
+                    summarize(total = sum(`amount(m)`)) %>% 
+                    arrange(desc(total))
+                    
+amt_by_year %>% ggplot(aes(x = appfy, y = total)) +
+                        geom_col(aes(fill = side)) +
+                        geom_text(aes(label = total, y = total),
+                                    vjust = 1.4, size = 3, color = "white") +
+                        labs(x = "Year", y = "Amount", fill = "Side",
+                                title = "IFC: Breakdown of Demand and Supply Side Amount",
+                                subtitle = "in million US$") +
+                        theme_minimal() +
+                        theme(legend.position = "bottom")
+ggsave("./viz/amt_intv.png", width = 15, height = 10, units = "cm")
+```
+
+### Chart 3: Total project numbers by year
+
+```{r total_number}
+num_projs <- ifc_ee_data %>%
+                group_by(side) %>% 
+                summarize(count = n()) %>% 
+                arrange(desc(count))
+
+num_projs %>% ggplot(aes(x = side, y = count)) +
+                    geom_col() +
+                    geom_text(aes(label = count, y = count),
+                                vjust = 1.4, size = 5, color = "white") +
+                    labs(x = "Side", y = "Number of Interventions", 
+                            title = "IFC: Breakdown of Demand and Supply Side Interventions",
+                            subtitle = "(FY2011-2020)") +
+                    theme_minimal() +
+                theme(legend.position = "bottom")
+ggsave("./viz/tot_intv.png", width = 15, height = 10, units = "cm")
+```
+
+### Chart 3: Total project amount by year
+
+```{r total_amount}
+amt_projs <- ifc_ee_data %>%
+                filter(!is.na(`amount(m)`)) %>% 
+                group_by(side) %>% 
+                summarize(total = sum(`amount(m)`)) %>% 
+                arrange(desc(total))
+
+amt_projs %>% ggplot(aes(x = side, y = total)) +
+                    geom_col() +
+                    geom_text(aes(label = total, y = total),
+                                vjust = 1.4, size = 5, color = "white") +
+                    labs(x = "Side", y = "Amount", 
+                            title = "IFC: Breakdown of Demand and Supply Side Amount",
+                            subtitle = "(FY2011-2020)") +
+                    theme_minimal() +
+                theme(legend.position = "bottom")
+ggsave("./viz/tot_amt_intv.png", width = 15, height = 10, units = "cm")
+```
+
