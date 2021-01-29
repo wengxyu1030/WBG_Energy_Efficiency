@@ -1,0 +1,770 @@
+---
+title: "WBG Energy Efficiency Portfolio Analysis"
+author: "Aline"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.retina = 2, fig.width = 7, fig.height = 6, message=FALSE,warning=FALSE)
+
+.libPaths("C:/Users/wb500886/Downloads/library")
+# load package
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+
+library(plm)
+library(lfe)
+library(broom)
+
+library(skimr)
+library(tibble)
+library(tidyverse)
+library(stargazer)
+library(knitr)
+library(kableExtra)
+library(forcats)
+library(readxl)
+library(openxlsx)
+library(countrycode)
+library(corrplot)
+
+library(RColorBrewer)
+library(imputeTS)
+
+library(officer)
+library(rvg)
+
+library(janitor)
+```
+
+
+```{r data}
+
+#load data-----
+load("data/ee_wb.rda")
+load("data/operation_0.rda")
+load("data/wb_kw.rda")
+load("data/fcv.rda") #should use the historical list. 
+load("data/sector.rda")
+load("data/rise.rda")
+load("data/ctr_ptf.rda")
+load("data/ctr_tag.rda")
+
+#variables needed-----
+var_keep_ifc <- c("pid", "name","rgn", "ctr", "appfy", "income", "appfy", "inst","amount(m)","sector_1","sector_2","sector_3")
+
+#ifc status-----
+ifc_status <- read_excel("input/ifc/Project Extract as of 0430201.xlsx") %>%
+  select(`Project ID`,`Project Status Name`) %>%
+  rename(pid = `Project ID`,
+         status = `Project Status Name`) %>%
+  rbind( read_excel("input/ifc/AS-1.12_-_Key_Memo_Details_for_Projects 063020.xlsx") %>%
+               select(`Project ID`,`Project Status`) %>%
+               rename(pid = `Project ID`,
+                      status = `Project Status`)) %>%
+  mutate(status = toupper(status))
+
+#clean the ee_ifc -----
+ee_ifc_raw <- read_excel("input/EE_IFC_projects_0930.xlsx")
+test<-anyDuplicated(ee_ifc_raw$PID)
+
+ee_ifc_use <- ee_ifc_raw %>%
+  rename(source = Source,
+         pid = PID,
+         name = project_name)%>%
+  select(var_keep_ifc) %>%
+  mutate(income = recode(income,
+                         L = "LIC",
+                         H = "HIC",
+                         LM = "LMIC",
+                         UM = "UMIC")) %>%
+  distinct() %>%
+  left_join(ifc_status, by = "pid")
+
+test<-anyDuplicated(ee_ifc_use$pid)
+test<-skim(ee_ifc_use)
+
+test <- ee_ifc_use %>% 
+  filter(is.na(income)) %>% 
+  distinct(ctr)
+
+
+
+
+#WBG EE profile-----
+ee_wbg <- ee_wb %>%
+  select(-iso3c)%>%
+  plyr::rbind.fill(ee_ifc_use) %>%
+  mutate(`amount(m)` = round(`amount(m)`,digits = 2)) %>%
+  mutate(inst_grp = case_when(grepl("IFC",inst) ~ "IFC",
+                              grepl("WB", inst) ~ "WB" )) %>%
+  mutate(type = case_when(grepl("IS|Lend",inst) ~ "IS",
+                          TRUE ~ "AS"),
+         appfy = as.character(appfy)) %>%
+  select(pid,inst,rgn,ctr,income,appfy,`amount(m)`,everything()) %>%
+  #left_join(fcv,by = c( "ctr" = "CNTRY_SHORT_NAME", "appfy" = "PROJ_APPRVL_FY" )) %>%
+  #rename(fcv = FRAGILE_STATE_IND) %>% 
+  mutate(ctr_code = countrycode(ctr, 
+                           origin = 'country.name',
+                           destination = 'iso3c',
+                           custom_match = c('Kosovo'='KVO',
+                                            "Yemen, People's Democratic Republic of" = 'YEM'))) %>%
+  left_join(ctr_tag %>% select(FCS,iso3c,`Income Level`,fy) %>%
+              mutate(fy = as.character(fy)), by =c("ctr_code"="iso3c","appfy"="fy"))%>%
+  #mutate(fcv = ifelse(is.na(fcv)&!is.na(ctr_code),FCS,fcv),
+  #       fcv = toupper(fcv),
+  #      income = ifelse(is.na(income)&!is.na(ctr_code),`Income Level`,income)) %>%
+  #select(-FCS,-`Income Level`)
+
+```
+
+```{r quality, results='hide',fig.show='hide',echo=FALSE,message=FALSE}
+anyDuplicated(ee_wbg$Pid)
+skim(ee_wbg)
+
+ee_wbg %>% 
+  filter(is.na(fcv)) %>%
+  filter(!is.na(appfy),
+         !grepl("Region",ctr))%>%
+  distinct(ctr,appfy) #good
+
+ee_wbg %>% 
+  filter(is.na(income))%>%
+  filter(!is.na(appfy),
+         !grepl("Region|World",ctr))%>%
+  distinct(ctr,appfy) #Serbia 2007 missing in ee_ifc_use but fixed in ee_wbg.
+
+ee_wbg %>% 
+  filter(is.na(ctr_code),
+         !grepl("Region|World",ctr))%>%
+  distinct(ctr) #good. 
+
+ee_ifc_use %>%
+  filter(dplyr::between(appfy,2011,2020))%>%
+  nrow()
+
+ee_wbg %>%
+  filter(grepl("IFC",inst))%>%
+  filter(dplyr::between(appfy,2011,2020))%>%
+  nrow()
+
+save(ee_wbg, file ="data/ee_wbg.rda")
+
+#outprint to excel
+ee_wbg %>%
+  select(-type,-inst_grp) %>%
+  arrange(inst,rgn,ctr,appfy)%>%
+  openxlsx::write.xlsx("output/EE_WBG_1023.xlsx", sheetName = "EE_WBG", firstRow = TRUE, firstCol = TRUE)
+
+ee_wbg %>%
+  select(-type,-inst_grp) %>%
+  arrange(inst,rgn,ctr,appfy)%>%
+  filter(grepl("WB",inst,ignore.case = TRUE)) %>%
+  openxlsx::write.xlsx("output/EE_WB_1023.xlsx", sheetName = "EE_WB", firstRow = TRUE, firstCol = TRUE)
+
+
+
+```
+
+
+
+```{r function}
+figure_col<- function(slice,x_title,title,data) {
+  data %>%
+    group_by({{slice}}) %>%
+    dplyr::summarise(amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+    ggplot(aes(x = reorder({{slice}},desc(amt)),y = amt)) +
+    geom_col( width = 0.5) +
+    labs( title = title,
+          x = x_title,
+          y = "Commitment Amount ($million)") + 
+    theme(plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle = 90))
+}
+
+figure_col_n<- function(slice,x_title,title,data) {
+  data %>%
+    group_by({{slice}}) %>%
+    dplyr::summarise(n = n()) %>%
+    ggplot(aes(x = reorder({{slice}},desc(n)),y = n)) +
+    geom_col( width = 0.5) +
+    labs( title = title,
+          x = x_title,
+          y = "Number of Project") + 
+    theme(plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle = 90))
+}
+
+
+```
+
+## Method:
+1. The Energy Efficiency (EE) portfolio is constructed by various approaches, including: 
+    + Energy GP portfolio identification and review (mostly WB Lending). 
+    + ESMAP portfolio (mostly WB ASA)
+    + Product line identification (IFC Sustainable Energy Finance and FI)
+    
+  
+2. The evaluation period is from Fiscal Year 2011 to 2020. EE projects that approved from FY 2011 is scooped in the EE evaluation portfolio. For IFC-AS projects where approval FY is missing, the earliest milestone is regarded as the Approval FY, otherwise left as missing.
+
+3. The commitment amount for WB ASA is estimated by the Energy GP portfolio review, for the ASA projects identified from ESMAP, the preparation cost, if available, is estimated as commitment amount. For the IFC AS project, the commitment amount estimated using the total expenditures for the closed projects and the IFC commitment for active projects. For WB Lending projects, the commitment amount is estimated by the Energy GP portfolio review for components with EE, the disbursement rate is assumed to be 100%. For some IFC IS projects, the commitment amount in the portfolio is different from the documented final value, to be cross-checked and corrected.  
+
+3. The final portfolio is subject to the evaluation team and peer review.  
+
+
+## Summary Table
+
+```{r wbg_table, echo=FALSE}
+
+table_time <- function(df) {
+tab_1 <- df %>%
+  group_by(inst) %>%
+  summarise(n = n(), cmt = sum(`amount(m)`,na.rm = TRUE)) 
+  #%>% mutate(cmt = ifelse(grepl("AS",inst),0,cmt)) 
+
+tab_2 <- tab_1 %>%
+  ungroup() %>%
+  dplyr::summarise(n = sum(n), cmt = sum(cmt,na.rm = TRUE)) %>%
+  mutate(inst = "Total")
+
+tab_1 %>% 
+  rbind(tab_2) 
+#%>%mutate(cmt = ifelse(grepl("AS",inst),"NA",cmt)) 
+}
+
+tab_all <- ee_wbg %>% 
+  filter(!is.na(appfy)) %>%
+  table_time() %>%
+  left_join(
+    ee_wbg %>% 
+    filter(!is.na(appfy)) %>%
+    filter(appfy <= 2010) %>%
+    table_time(), by = "inst") %>%
+  left_join(
+    ee_wbg %>% 
+      filter(!is.na(appfy)) %>%
+    filter(dplyr::between(appfy,2011,2015)) %>%
+    table_time(), by = "inst"
+  ) %>%
+  left_join(
+    ee_wbg %>% 
+        filter(!is.na(appfy)) %>%
+    filter(dplyr::between(appfy,2016,2020)) %>%
+    table_time(), by = "inst"
+  ) %>%
+  kable( col.names = c("Institution",
+                       "n","cmt(`$`m)",
+                       "n","cmt(`$`m)",
+                       "n","cmt(`$`m)",
+                       "n","cmt(`$`m)")) %>%
+  kable_styling() %>%
+  add_header_above(c(" "=1, "Total" = 2, "<=2010" = 2, 
+                     "2011-2015" = 2, "2016-2020" = 2))
+
+tab_master <- ee_wbg %>% 
+    filter(!is.na(appfy)) %>%
+  filter(dplyr::between(appfy,2011,2020)) %>%
+  table_time() %>%
+  left_join(
+    ee_wbg %>% 
+        filter(!is.na(appfy)) %>%
+    filter(dplyr::between(appfy,2011,2015)) %>%
+    table_time(), by = "inst"
+  ) %>%
+  left_join(
+    ee_wbg %>% 
+        filter(!is.na(appfy)) %>%
+    filter(dplyr::between(appfy,2016,2020)) %>%
+    table_time(), by = "inst"
+  ) %>%
+  kable( col.names = c("Institution",
+                       "n","cmt(`$`m)",
+                       "n","cmt(`$`m)",
+                       "n","cmt(`$`m)"),
+         caption = "Table 1. WBG Energy Efficiency Portfolio Summary") %>%
+  kable_styling() %>%
+  add_header_above(c(" "=1, "Total" = 2,  
+                     "2011-2015" = 2, "2016-2020" = 2))
+
+tab_master
+```
+
+
+
+```{r wb_table}
+#tables
+
+ee_wbg_use <- ee_wbg %>%
+  filter(dplyr::between(appfy,2011,2020))
+
+appfy <- ee_wbg_use %>%
+  filter(appfy != 0) %>%
+  group_by(appfy) %>%
+  summarise(amount_total = sum(`amount(m)`,na.rm = TRUE), n_total = n())
+
+income <- ee_wbg_use %>%
+  filter(!is.na(income)) %>%
+  group_by(income) %>%
+  summarise(amount_total = sum(`amount(m)`,na.rm = TRUE)) %>%
+  mutate(amount_pct = amount_total/sum(amount_total)*100) %>%
+  arrange(amount_pct)
+
+rgn <- ee_wbg_use %>%
+  group_by(rgn) %>%
+  summarise(amount_total = sum(`amount(m)`,na.rm = TRUE)) %>%
+  mutate(amount_pct = amount_total/sum(amount_total)*100) %>%
+  arrange(amount_pct)
+
+rgn_compare <-ee_wbg_use %>%
+  filter(dplyr::between(appfy,2011,2020)) %>%
+  filter(!is.na(ctr_code))%>%
+  group_by(ctr_code,rgn)%>%
+  dplyr::summarise(n=n(),
+                   `amount(m)` = sum(`amount(m)`)) %>%
+  inner_join(rise,by="ctr_code") %>%
+  left_join(ctr_ptf, by = "ctr_code") %>%
+  ungroup %>%
+  group_by(rgn) %>%
+  summarise(across(c(`amount(m)`,amount_wb,n,n_wb),sum,na.rm = TRUE))%>%
+  mutate(wb_amt_rate = `amount(m)`/amount_wb*1e6*100,
+         wb_n_rate = n/n_wb*100) 
+```
+
+
+
+## WBG Energy Efficiency Portfolio by country and project status.
+
+```{r plot_data}
+
+scaleFUN <- function(x) sprintf("%.0f", x)
+
+master <- ee_wbg %>%
+  filter(dplyr::between(appfy,2011,2020)) %>%
+  mutate(appfy = as.numeric(appfy)) %>%
+  group_by(rgn,inst,appfy,income,fcv,lend_grp_wb) %>%
+  dplyr::summarise(n = n(), 
+                   amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+  pivot_longer(c(n,amt),names_to = "unit",values_to = "value") %>%
+  mutate(unit = recode(unit,
+                       n = "Number of Project (n)",
+                       amt = "Commitment Amt. ($m)"))
+
+```
+
+
+```{r wbg_plot}
+
+slice_col <- function(df,x,title){
+  df %>%
+  group_by(appfy,inst,unit,{{x}})%>%
+  dplyr::summarise(value = sum(value,na.rm = TRUE))%>%
+  ggplot(aes(x = appfy,y = value, fill = inst)) +
+  geom_col( width = 0.5,colour = "black") +
+  labs( title = title,
+        x = "Approval FY",
+        y = "",
+        fill = "Institution",
+        caption = "Data Source: IEG, ESMAP") + 
+  theme(plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle = 90)) +
+  facet_grid(cols = vars({{x}}), rows = vars(unit),
+             scales = "free_y")  +
+  scale_fill_brewer(palette = "Blues") + 
+  scale_x_continuous(breaks=seq(2011, 2020, 4)) +
+  theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey")
+  ) 
+}
+slice_area <- function(df,x,title,tlte_fill){
+  df %>%
+  #lending only
+  filter(!grepl("as",inst,ignore.case = TRUE),
+         unit == "Commitment Amt. ($m)",
+         {{x}} != "OTH")%>%
+  mutate(appfy = as.numeric(appfy)) %>%
+  group_by(appfy,{{x}},unit)%>%
+  dplyr::summarise(value = sum(value,na.rm = TRUE))%>%
+  #start plot
+  ggplot(aes(x = appfy,y = value, fill = fct_reorder({{x}},value))) + 
+  geom_area(colour = "black") +
+  labs( title = title,
+        x = "Approval FY",
+        y = "Commitment Amt. ($m)",
+        fill = tlte_fill,
+        caption = "Data Source: IEG, ESMAP") + 
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_fill_brewer(palette = "Blues") + 
+  scale_x_continuous(breaks=seq(2011, 2020, 4)) +
+    theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey") 
+  )
+}
+slice_col_1 <- function(df,x,title,tlte_fill){
+  df %>%
+  #lending only
+  filter(!grepl("as",inst,ignore.case = TRUE),
+         unit == "Commitment Amt. ($m)",
+         {{x}} != "OTH")%>%
+  mutate(appfy = as.numeric(appfy)) %>%
+  group_by(appfy,{{x}},unit)%>%
+  dplyr::summarise(value = sum(value,na.rm = TRUE))%>%
+  #start plot
+  ggplot(aes(x = appfy,y = value, fill = fct_reorder({{x}},value))) + 
+  geom_col(colour = "black") +
+  labs( title = title,
+        x = "Approval FY",
+        y = "Commitment Amt. ($m)",
+        fill = tlte_fill,
+        caption = "Data Source: IEG, ESMAP") + 
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_fill_brewer(palette = "Blues") + 
+  scale_x_continuous(breaks=seq(2011, 2020, 4)) +
+    theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey") 
+  )
+}
+  
+#by institution and time
+f1 <- slice_area(df=master,x=inst,
+                 title="Figure 1. WBG Energy Efficiency Lending Portfolio by Institution",
+                 tlte_fill="Institution")
+
+
+#by region
+f2 <- slice_area(df=master,x=rgn,
+                 title="Figure 2. WBG Energy Efficiency Lending Portfolio by Region",
+                 tlte_fill="Region") +
+  labs(caption = "Note: The projects with region tagged as 'OTH' 
+       is not included in the figure. \n Data Source: IEG") 
+
+#by income
+f3<-master %>%
+  ungroup()%>%
+  filter(grepl("LIC|LMIC|UMIC|HIC",income)) %>%
+  mutate(income = factor(income, levels = c("LIC","LMIC","UMIC","HIC"))) %>%
+  slice_col_1(df = ., x = income, 
+             title = "Figure 3. WBG Energy Efficiency Lending Portfolio by Income Group",
+             tlte_fill = "Income Group") +
+  labs(caption = "Note: Regional projects are not included in the figure
+       as they are not tagged with country Income Group. \n Data Source: IEG")
+
+#by FCS
+f4 <- master %>%
+  filter(!is.na(fcv)) %>%
+  mutate(fcv = recode(fcv,
+                      NO = "Non-FCS",
+                      YES = "FCS")) %>%
+  slice_col(df = . , x = fcv, title = "Figure 4. WBG Energy Efficiency Portfolio by FCS Status") +
+  labs(caption = "Note: Regional projects are not included in the figure
+       as they are not tagged with country FCS status. \n Data Source: IEG, ESMAP")
+
+#by lending grp
+f5 <- master %>%
+  filter(!is.na(lend_grp_wb) & grepl("WB",inst)) %>%
+  slice_col(df = ., x = lend_grp_wb, title = "Figure 5. WB Energy Efficiency Portfolio by Lending Group")+
+  labs(caption = "Note: Regional projects are not included in the figure
+       as they are not tagged with country Lending Group. \n Data Source: IEG, ESMAP")
+```
+
+
+```{r wb_sector}
+wb_sector <- ee_wbg %>% #select top 5 sector in the evaluaion period in WB. 
+  left_join(sector, by = c("pid"="PROJECTID")) %>%
+  rename(sector_major = MAJORSECTOR_NAME) %>%
+  distinct()%>%
+  filter(dplyr::between(appfy,2011,2020),
+         !is.na(sector_major)) %>%
+  mutate(appfy = as.character(appfy)) %>%
+  group_by(sector_major) %>%
+  dplyr::count() %>%
+  arrange(-n) %>%
+  ungroup() %>%
+  mutate(n_rate = n/sum(n)*100) %>%
+  top_n(5) %>%
+  mutate(sector_main = 1) 
+
+f6_1 <- ee_wbg %>% #add ifc sector as well.
+  filter(type == "IS") %>%
+  left_join(sector, by = c("pid"="PROJECTID")) %>%
+  rename(sector_major = MAJORSECTOR_NAME) %>%
+  left_join(wb_sector, by = "sector_major")%>%
+  filter(dplyr::between(appfy,2011,2020),
+         !is.na(sector_major)) %>%
+  mutate(sector_grp = case_when(sector_main == 1 ~ sector_major,
+                                TRUE ~ "Other")) %>%
+  #filter(sector_grp != "Other") %>%
+  group_by(sector_grp,inst,appfy) %>%
+  dplyr::summarise(n = n(), 
+                   amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+  ggplot(aes(x = appfy,y = amt, fill = fct_reorder(sector_grp,amt))) +
+  geom_col( width = 0.5, position = "dodge") +
+  labs( title = "Figure 6.1. WB Energy Efficiency Lending Portfolio by Sector",
+        x = "Approval FY",
+        y = "Commitment Amt. ($m)",
+        fill = "Major Sector") + 
+  theme(plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle = 90),
+        legend.position="bottom") +
+  scale_fill_brewer(palette = "Blues") +
+  theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey")
+  ) +
+  labs(caption = "Note: One project could be identified with multiple major sector, 
+        Only top five major sectors counted by project number is listed in figure. \n Data Source: IEG")
+
+ifc_sector <- ee_wbg %>% #select top 5 sector in the evaluaion period in IFC. 
+  filter(dplyr::between(appfy,2011,2020),
+         grepl("IFC",inst, ignore.case = TRUE)) %>%
+  group_by(sector_1) %>%
+  dplyr::count() %>%
+  arrange(-n) %>%
+  ungroup() %>%
+  mutate(n_rate = n/sum(n)*100) %>%
+  top_n(5) %>%
+  mutate(sector_main = 1) 
+
+f6_2 <- ee_wbg %>% #add ifc sector as well.
+  left_join(ifc_sector, by = "sector_1")%>%
+  filter(dplyr::between(appfy,2011,2020),
+         grepl("ifc",inst,ignore.case = TRUE)) %>%
+  mutate(sector_grp = case_when(sector_main == 1 ~ sector_1,
+                                TRUE ~ "Other")) %>%
+  #filter(sector_grp != "Other") %>%
+  group_by(sector_grp,inst,appfy) %>%
+  dplyr::summarise(n = n(), 
+                   amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+  ggplot(aes(x = appfy,y = amt, fill = fct_reorder(sector_grp,amt))) +
+  geom_col( width = 0.5, position = "dodge") +
+  labs( title = "Figure 6.2. IFC Energy Efficiency Lending Portfolio by Sector",
+        x = "Approval FY",
+        y = "Commitment Amt. ($m)",
+        fill = "Major Sector") + 
+  theme(plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle = 90),
+        legend.position="bottom") +
+  scale_fill_brewer(palette = "Blues") +
+    theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey")
+  ) +
+  labs(caption = "Note: One project could be identified with multiple major sector, 
+        Only top five major sectors counted by project number is listed in figure, 
+        other sectors are categorized as 'Other'. \n Data Source: IEG")
+  
+```
+
+```{r ctr_indi}
+
+ctr_indi<- ee_wbg %>%
+  filter(dplyr::between(appfy,2011,2020)) %>%
+  filter(!is.na(ctr_code))%>%
+  group_by(ctr_code,rgn)%>%
+  dplyr::summarise(n=n(),
+                   `amount(m)` = sum(`amount(m)`)) %>%
+  inner_join(rise,by="ctr_code") %>%
+  left_join(ctr_ptf, by = "ctr_code") %>%
+  mutate(wb_amt_rate = `amount(m)`/amount_wb*1e6*100,
+         wb_n_rate = n/n_wb*100) 
+
+xline <- median(ctr_indi$score, na.rm = TRUE)
+yline <- median(ctr_indi$wb_amt_rate, na.rm = TRUE)
+
+f7 <- ctr_indi %>%
+  ggplot(aes(x = score, y = wb_amt_rate, size = wb_n_rate, color = rgn, alpha = 1/5))+
+  geom_jitter()+
+  geom_text(aes(label=ctr_code),hjust=0, vjust=0) +
+  labs(title = "Figure 7. WBG Energy Efficiency Portfolio by Country",
+       x = "RISE Energy Efficiency Score (Total)",
+       y = "WBG EE Cmt. to WB Country Cmt. (%)",
+       color = "Region",
+       size = "Proportion by project (n) (%)",
+       caption = "Note: The RISE Energy Efficiency score is the total 
+       score of 13 RISE Energy Efficiency indicators in 2017.
+       The dashlines are the median value of each axis. \n Data Source: IEG, ESMAP") +
+  scale_alpha(guide = 'none') +
+  geom_hline(yintercept = yline, linetype = "dashed", color = "grey") +
+  geom_vline(xintercept = xline, linetype = "dashed", color = "grey") +
+  theme(
+  panel.background = element_rect(fill = "white",
+                                colour = "white",
+                                size = 0.5, linetype = "solid"),
+  panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+                                colour = "lightgrey"), 
+  panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+                                colour = "lightgrey")
+  ) 
+
+
+
+```
+
+## Print to excel
+
+
+###figures
+```{r print_f}
+
+
+# Create a new xlsx. document
+
+doc <- read_xlsx()
+
+doc <- add_sheet(doc, label = "f1")
+doc <- add_sheet(doc, label = "f2")
+doc <- add_sheet(doc, label = "f3")
+doc <- add_sheet(doc, label = "f4")
+doc <- add_sheet(doc, label = "f5")
+doc <- add_sheet(doc, label = "f6_1")
+doc <- add_sheet(doc, label = "f6_2")
+doc <- add_sheet(doc, label = "f7")
+
+doc <- xl_add_vg(doc, sheet = "f1", code = print(f1), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f2", code = print(f2), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f3", code = print(f3), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f4", code = print(f4), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f5", code = print(f5), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f6_1", code = print(f6_1), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f6_2", code = print(f6_2), 
+                 width = 6, height = 6, left = 1, top = 2)
+doc <- xl_add_vg(doc, sheet = "f7", code = print(f7), 
+                 width = 6, height = 6, left = 1, top = 2)
+
+print(doc, target = "output/EE_PRA_f.xlsx")
+
+```
+
+###figure numbers
+```{r print_t}
+library(officer)
+library(rvg)
+
+slice_tab <- function(df,x){
+    df %>%
+  group_by(appfy,inst,unit,{{x}})%>%
+  dplyr::summarise(value = sum(value,na.rm = TRUE))}
+
+tab <- createWorkbook()
+
+add_tab <- function(df, sheet){
+  addWorksheet(tab,sheet) 
+  writeData(tab,sheet = sheet, x= df)
+}
+
+#by institution and time
+t1 <- master %>%
+  #mutate(appfy = as.numeric(appfy)) %>%
+  group_by(appfy,inst,unit)%>%
+  dplyr::summarise(value = sum(value,na.rm = TRUE))
+add_tab(t1,"t1")
+
+#by region
+t2 <- master %>%
+  filter(rgn != "OTH") %>%
+  slice_tab(df= .,x = rgn)
+add_tab(t2,"t2")
+
+
+#by income
+t3<-master %>%
+  filter(!is.na(income)) %>%
+  mutate(income = factor(income, levels = c("LIC","LMIC","UMIC","HIC"))) %>%
+  slice_tab(df = ., x = income)
+add_tab(t3,"t3")
+
+   
+#by FCS
+t4 <- master %>%
+  filter(!is.na(fcv)) %>%
+  mutate(fcv = recode(fcv,
+                      NO = "Non-FCS",
+                      YES = "FCS")) %>%
+  slice_tab(df = . , x = fcv)
+add_tab(t4,"t4")
+
+#by lending grp
+t5 <- master %>%
+  filter(!is.na(fcv) & grepl("WB",inst)) %>%
+  slice_tab(df = ., x = lend_grp_wb)
+add_tab(t5,"t5")
+
+#sector
+t6_1 <- ee_wbg %>%
+  left_join(sector, by = c("pid"="PROJECTID")) %>%
+  rename(sector_major = MAJORSECTOR_NAME) %>%
+  left_join(wb_sector, by = "sector_major")%>%
+  filter(dplyr::between(appfy,2011,2020),
+         !is.na(sector_major)) %>%
+  mutate(sector_grp = case_when(sector_main == 1 ~ sector_major,
+                                TRUE ~ "Other")) %>%
+  group_by(sector_grp,inst,appfy) %>%
+  dplyr::summarise(n = n(), 
+                   amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+  pivot_longer(c(n,amt),names_to = "unit",values_to = "value") %>%
+  mutate(unit = recode(unit,
+                       n = "Number of Project (n)",
+                       amt = "Commitment Amt. ($m)"))
+add_tab(t6_1,"t6_1")
+
+t6_2 <- ee_wbg %>%
+  left_join(ifc_sector, by = "sector_1")%>%
+  filter(dplyr::between(appfy,2011,2020),
+         grepl("ifc",inst,ignore.case = TRUE)) %>%
+  mutate(sector_grp = case_when(sector_main == 1 ~ sector_1,
+                                TRUE ~ "Other")) %>%
+  group_by(sector_grp,inst,appfy) %>%
+  dplyr::summarise(n = n(), 
+                   amt = sum(`amount(m)`, na.rm = TRUE)) %>%
+  pivot_longer(c(n,amt),names_to = "unit",values_to = "value") %>%
+  mutate(unit = recode(unit,
+                       n = "Number of Project (n)",
+                       amt = "Commitment Amt. ($m)"))
+add_tab(t6_2,"t6_2")
+
+#ctr
+t7<-ctr_indi
+add_tab(t7,"t7")
+
+saveWorkbook(tab, "output/EE_PRA.xlsx", overwrite = TRUE)
+          
+
+```
